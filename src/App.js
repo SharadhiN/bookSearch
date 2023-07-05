@@ -44,8 +44,8 @@ const App = () => {
     // states for books Response data from the API
     const [bookData, setBookData] = useState();
     const [nextResults, setNextResults] = useState();
-    const [searchTitleValue, setSearchTitleValue] = useState("");
-    const [searchAuthorValue, setSearchAuthorValue] = useState("");
+    const [searchValue, setSearchValue] = useState("");
+    const [searchUri, setSearchUri] = useState(null);
 
 
     // states for infinite scroll
@@ -53,49 +53,19 @@ const App = () => {
     const [hasMoreValue, setHasMoreValue] = useState(true);
 
     const handleSubmit = () => {
-      console.log('Fetch Search API');
-      let uri = API + '?search=' + searchTitleValue;
+      console.log('searching for books');
+      let uri = API + '?search=' + searchValue;
       uri = encodeURI(uri);
-      fetchBooks(uri);
+      setBookData([]);
+      setScrollData([]);
+      setSearchUri(uri);
+      // fetchBooks(uri);
     }
 
     const handleTitleChange = (e) => {
       // create the uri with search = query%params and fetch search results
-      setSearchTitleValue(e.target.value);
+      setSearchValue(e.target.value);
       // e.preventDefault();
-      
-
-      // ! CLIENT SIDE FILTERING
-
-      // if (searchTitleValue.length > 0) {
-      //   let temp = [ ...bookData ];
-      //   // filter by title
-      //   temp = temp.filter(each => (each.title).toLowerCase().includes(searchTitleValue.toLowerCase()));
-      //   setScrollData(temp);
-      //   // setBookData(temp);
-      //   setHasMoreValue(false);
-      // } else {
-      //   // setBookData([]);
-      //   setScrollData(bookData.slice(0, bookData.length + 20));
-      //   setHasMoreValue(false);
-      // }
-    }
-    const handleAuthorChange = (e) => {
-      // e.preventDefault();
-      setSearchAuthorValue(e.target.value);
-
-      if (searchAuthorValue.length > 0) {
-        // filter by author
-        let temp = [ ...bookData ];
-        temp = temp.filter(each => each.authors.some(author => author.name.toLowerCase().includes(searchAuthorValue.toLowerCase())));
-        console.log(searchAuthorValue);
-        console.log(temp);
-        setScrollData(temp);
-        setHasMoreValue(false);
-      } else {
-        setScrollData(bookData.slice(0, bookData.length + 20));
-        setHasMoreValue(false);
-      }
     }
 
     const fetchBooks = async (url) => {
@@ -107,17 +77,16 @@ const App = () => {
             response = await axios.get(API);
           }
           if ( response ) {
-            console.log('Response received!', response.data);
-            // call setBookData here
-            const newData = response.data.results;
-            setBookData(newData);
+            setSearchUri(null);
             setNextResults(response.data.next);
+            let newData = [ ...response.data.results];
+
+            if ( newData.length < 16 ) setHasMoreValue(false);
 
             // check "format" fields in each book to get image, audio info
             newData.forEach(book => {
                 let formats = book.formats;
                 let bookKeys = Object.keys(formats);
-                // console.log(bookKeys);
                 for (let each of bookKeys) {
                     // make the img url easily accessible
                     if ( each.includes('image/jpeg') ) {
@@ -132,13 +101,18 @@ const App = () => {
                     //TODO: make the audio url easily accessible
                 }
             });
+            if ( scrollData && scrollData.length > 0 ) newData = [ ...bookData, ...newData ];
+            setBookData([...newData]);
 
-            // set scroll data - set initial scroll range
-            setScrollData(newData.slice(0, 20));
-            setHasMoreValue(true);
+            if ( scrollData && scrollData.length > 0 ) loadMoreData();
+            else {
+              // set scroll data - set initial scroll range
+              let end = newData.length < 16 ? newData.length : 16;
+              setScrollData(newData.slice(0, end));
+              setHasMoreValue(true);
+            }
           }
         } catch (axiosError) {
-            console.log(axiosError);
             console.log('Error occurred while trying to fetch API data!');
         }
     };
@@ -146,8 +120,8 @@ const App = () => {
     const loadMoreData = () => {
         // load more data here by increasing the scroll range
         try {
-            fetchBooks(nextResults);
-            // setScrollData(bookData.slice(0, scrollData.length + 20));
+            let newScrollData = [ ...scrollData, ...bookData.slice(scrollData.length, scrollData.length + 16) ];
+            setScrollData([...newScrollData]);
         } catch (err) {
             console.log(err);
         }
@@ -155,21 +129,23 @@ const App = () => {
 
     const lastRowHandler = () => {
         // check scroll length and available data length and load more if required.
-        console.log('Loading more books');
-        if ( scrollData.length < bookData.length ) {
-            setHasMoreValue(true);
-            loadMoreData();
-        } else setHasMoreValue(false);
-
-        // setHasMoreValue(true);
-        // loadMoreData();
+        if ( (scrollData.length + 16) < bookData.length ) {
+          console.log('getting the next batch ready');
+          setHasMoreValue(true);
+          loadMoreData();
+        } else if ( scrollData.length == 16 ) {
+          console.log('fetching the next batch');
+          fetchBooks(nextResults);
+          setHasMoreValue(true);
+        } else {
+          setHasMoreValue(false);
+        }
     };
 
     const renderBooks = (index) => {
       if ( !bookData || !bookData[index] ) return null;
         const { title, authors, imgUrl } = bookData[index];
         let authorsName = authors.map(a => a.name);
-
 
         return (
             <Grid key={index} item xs={12} sm={6} md={4} lg={3}>
@@ -196,9 +172,14 @@ const App = () => {
 
     useEffect(() => {
         if ( !bookData || bookData.length == 0 ) {
-          fetchBooks();
+          fetchBooks(null);
         }
     }, []);
+
+    useEffect(() => {
+      // if ( !searchUri ) return null;
+      if ( searchUri ) fetchBooks(searchUri);
+    }, [searchUri]);
 
 
     return(
@@ -208,32 +189,19 @@ const App = () => {
                 type="text"
                 placeholder="Search for a book's title or author here"
                 onChange={handleTitleChange}
-                value={searchTitleValue}
+                value={searchValue}
                 size="50"
               />
               <button onClick={handleSubmit}>Search
               </button>
-              {/* <SearchField 
-                placeholder='Search for a book title here'
-                onEnter={handleTitleChange}
-              /> */}
-              {/* <input
-                type="text"
-                placeholder="Search for a book's author here"
-                onChange={handleAuthorChange}
-                value={searchAuthorValue}
-                size="50"
-              /> */}
             </div>
             {
                 scrollData && scrollData.length > 0 ?
                 (
                 <InfiniteScroll
                     dataLength={scrollData.length}
-                    next={lastRowHandler}
+                    next={() => lastRowHandler()}
                     hasMore={hasMoreValue}
-                    scrollThreshold={75}
-                    height={10}
                     loader={<LinearProgress />}
                     style={{ overflow: "unset" }}
                     endMessage={
